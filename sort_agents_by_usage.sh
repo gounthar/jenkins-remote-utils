@@ -24,7 +24,8 @@ function make_jenkins_api_request() {
 
 function get_defined_agents() {
     local api_endpoint=/computer/api/json
-    local agents_info=$(make_jenkins_api_request $api_endpoint)
+    local agents_info
+    agents_info=$(make_jenkins_api_request $api_endpoint)
     echo "$agents_info" | jq -r '.computer | map(select(.displayName != null)) | .[].displayName'
 }
 
@@ -41,31 +42,29 @@ function is_agent_active() {
 
 function get_all_jobs() {
     local api_endpoint="/api/json"
-    local all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
+    local all_jobs
+    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
     echo "$all_jobs"
 }
 
 function is_multibranch_job() {
     local job_name=$1
     local api_endpoint="/job/$job_name/api/json"
-    local job_info=$(make_jenkins_api_request "$api_endpoint")
+    local job_info
+    job_info=$(make_jenkins_api_request "$api_endpoint")
 
     if [ -z "$job_info" ]; then
         echo "Error: Unable to retrieve information for job $job_name"
         return
     fi
 
-    echo "Found some information about the job: $job_name"
-
-    local job_class=$(echo "$job_info" | jq -r '._class')
+    # Check if the job is a multibranch pipeline
+    local job_class
+    job_class=$(echo "$job_info" | jq -r '._class')
     [ "$job_class" = "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" ]
-
-#cho "Job class: $job_class"
-#cho "Job info: $job_info"
 }
 
 function get_valid_multibranch_jobs() {
-  # set -x
     local job_name=$1
     local api_endpoint="/job/$job_name/api/json"
     local job_info
@@ -76,22 +75,26 @@ function get_valid_multibranch_jobs() {
         return
     fi
 
-    local multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
+    # Get valid multibranch jobs for the given job_name
+    local multibranch_jobs
+    multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
     echo "$multibranch_jobs"
 }
 
 function get_last_10_builds_for_job() {
-#  set -x
     local job_url=${1//$JENKINS_URL/}
     local api_endpoint="api/json"
-    local job_info=$(make_jenkins_api_request "$job_url$api_endpoint")
+    local job_info
+    job_info=$(make_jenkins_api_request "$job_url$api_endpoint")
 
     if [ -z "$job_info" ]; then
         echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url"
         return
     fi
 
-    local builds_info=$(echo "$job_info" | jq -r '.builds | .[].number')
+    # Get the last 10 build numbers for the job
+    local builds_info
+    builds_info=$(echo "$job_info" | jq -r '.builds | .[].number')
     echo "$builds_info"
 }
 
@@ -99,16 +102,23 @@ function get_build_timestamp() {
     local job_name=${1//$JENKINS_URL/}
     local build_number=$2
     local api_endpoint="${job_name}/${build_number}/api/json?pretty=true"
-    local build_info=$(make_jenkins_api_request "$api_endpoint")
-    local timestamp=$(echo "$build_info" | jq -r '.timestamp')
+    local build_info
+    build_info=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$build_info" ]; then
+        echo "[${FUNCNAME[0]}] Error: Unable to retrieve build information for job: $job_name, build: $build_number"
+        return
+    fi
+
+    # Get the timestamp of the build
+    local timestamp
+    timestamp=$(echo "$build_info" | jq -r '.timestamp')
     echo "$timestamp"
 }
 
 function get_build_console_text() {
     local job_name=${1//$JENKINS_URL/}
     local build_number=$2
-
-    #echo "[${FUNCNAME[0]}] job_name: $job_name, build_number: $build_number"
 
     local api_endpoint="${job_name}/${build_number}/consoleText"
     local console_output
@@ -119,36 +129,32 @@ function get_build_console_text() {
 
 function extract_agent_info_from_console() {
     local console_file=$1
-    local agent_info=$(grep -o -P 'Running on \K\S+' "$console_file")
-
-    echo "[${FUNCNAME[0]}] Found agent info: $agent_info"
+    local agent_info
+    agent_info=$(grep -o -P 'Running on \K\S+' "$console_file")
 
     # Check if there are multiple agent names in the output
     if [ $(echo "$agent_info" | wc -l) -gt 1 ]; then
         while read -r line; do
-            echo "$line"  # Debug: Display each agent name separately
             [ -n "$line" ] && agent_usage["$line"]=$((agent_usage["$line"] + 1))
 
-            # Get the build timestamp for the current job and update the runner's timestamp if it's greater
-            local build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
+            # Get the build timestamp for the current job and update the agent's timestamp if it's greater
+            local build_timestamp
+            build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
             local current_timestamp="${agent_timestamps[$line]}"
             if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
                 agent_timestamps["$line"]="$build_timestamp"
             fi
-
-            echo "Agent usage updated for agent: $line, usage: ${agent_usage["$line"]}, latest build timestamp: ${agent_timestamps[$line]}"
         done <<< "$agent_info"
     elif [ -n "$agent_info" ]; then
         agent_usage["$agent_info"]=$((agent_usage["$agent_info"] + 1))
 
-        # Get the build timestamp for the current job and update the runner's timestamp if it's greater
-        local build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
+        # Get the build timestamp for the current job and update the agent's timestamp if it's greater
+        local build_timestamp
+        build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
         local current_timestamp="${agent_timestamps[$agent_info]}"
         if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
             agent_timestamps["$agent_info"]="$build_timestamp"
         fi
-
-        echo "Agent usage updated for agent: $agent_info, usage: ${agent_usage["$agent_info"]}, latest build timestamp: ${agent_timestamps[$agent_info]}"
     fi
 }
 
@@ -159,31 +165,22 @@ function convert_timestamp_to_date() {
 }
 
 # Step 1: Gather a list of all defined agents
-echo "Step 1: Gathering a list of all defined agents..."
 agents=$(get_defined_agents)
-echo "Defined Agents: $agents"
+for agent in $agents; do
+  echo "Agent: $agent"
+done
 
 # Step 2: Get information about each job
-echo -e "Step 2: Getting information about each job..."
 all_jobs=$(get_all_jobs)
-echo "All Jobs: $all_jobs"
 
 # Step 3: Determine if each job is a multibranch pipeline and get valid multibranch jobs
-echo -e "[${FUNCNAME[0]}] Step 3: Determining multibranch jobs and their valid branches/PRs..."
 for job_name in $all_jobs; do
     if is_multibranch_job "$job_name"; then
-        echo "[${FUNCNAME[0]}] Checking multibranch job: $job_name..."
         valid_multibranch_jobs=$(get_valid_multibranch_jobs "$job_name")
-        echo "[${FUNCNAME[0]}] Valid multibranch jobs for $job_name: $valid_multibranch_jobs"
         for valid_job_url in $valid_multibranch_jobs; do
-            echo "[${FUNCNAME[0]}] Fetching last 10 builds for job: $valid_job_url..."
             last_10_builds=$(get_last_10_builds_for_job "$valid_job_url")
-            echo "[${FUNCNAME[0]}] Last 10 builds for job $valid_job_url: $last_10_builds"
-
             for build_number in $last_10_builds; do
-                echo "[${FUNCNAME[0]}] Fetching console output for job: $valid_job_url, build: $build_number..."
                 console_text=$(get_build_console_text "$valid_job_url" "$build_number")
-                echo "[${FUNCNAME[0]}] Job: $valid_job_url, Build: $build_number, Console Output:"
                 echo "$console_text" > "console_output.txt"  # Save console output to a file
                 extract_agent_info_from_console "console_output.txt"
             done
@@ -198,7 +195,6 @@ for agent in "${!agent_usage[@]}"; do
 done
 
 # Step 5: Sort the agents based on their usage (descending order)
-echo "Step 5: Sorting the agents based on their usage..."
 sorted_agents=$(for agent in "${!agent_usage[@]}"; do
     echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: ${agent_timestamps[$agent]}"
 done | sort -k8 -nr)
@@ -208,7 +204,6 @@ echo "Sorted Agents and their usage count:"
 echo "$sorted_agents"
 
 # Step 7: Timestamps for each agent
-echo "Step 7: Timestamps for each agent:"
 for agent in "${!agent_timestamps[@]}"; do
     if is_agent_active "$agent"; then
         active_agents["$agent"]="${agent_timestamps[$agent]}"
