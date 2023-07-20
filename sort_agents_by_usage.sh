@@ -35,6 +35,7 @@ function make_jenkins_api_request() {
 }
 
 function get_defined_agents() {
+    #set -x
     local api_endpoint=/computer/api/json
     local agents_info
     agents_info=$(make_jenkins_api_request $api_endpoint)
@@ -53,13 +54,15 @@ function is_agent_active() {
 }
 
 function get_all_jobs() {
+   set -x
     local api_endpoint="/api/json"
     local all_jobs
-    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
+    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs[].url' | awk -F'/' '{print $(NF-1)}')
     echo "$all_jobs"
 }
 
 function is_multibranch_job() {
+    set -x
     local job_name=$1
     local api_endpoint="/job/$job_name/api/json"
     local job_info
