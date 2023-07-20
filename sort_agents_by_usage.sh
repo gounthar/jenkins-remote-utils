@@ -12,7 +12,10 @@ if [[ -z "$JENKINS_URL" || -z "$USERNAME" || -z "$API_TOKEN" ]]; then
     exit 1
 fi
 
+declare -A agent_usage  # New line to declare the associative array
 declare -A agent_timestamps  # New line to declare the associative array
+declare -A active_agents  # New line to declare the associative array
+declare -A inactive_agents  # New line to declare the associative array
 
 function make_jenkins_api_request() {
     local api_endpoint=$1
@@ -23,6 +26,17 @@ function get_defined_agents() {
     local api_endpoint=/computer/api/json
     local agents_info=$(make_jenkins_api_request $api_endpoint)
     echo "$agents_info" | jq -r '.computer | map(select(.displayName != null)) | .[].displayName'
+}
+
+# Function to check if an agent is active or inactive
+function is_agent_active() {
+    local agent=$1
+    local api_endpoint="/computer/$agent/api/json"
+    local agent_info
+    agent_info=$(make_jenkins_api_request "$api_endpoint")
+    local offline
+    offline=$(echo "$agent_info" | jq -r '.offline')
+    [ "$offline" = "false" ]
 }
 
 function get_all_jobs() {
@@ -150,13 +164,12 @@ agents=$(get_defined_agents)
 echo "Defined Agents: $agents"
 
 # Step 2: Get information about each job
-echo -e "\nStep 2: Getting information about each job..."
+echo -e "Step 2: Getting information about each job..."
 all_jobs=$(get_all_jobs)
 echo "All Jobs: $all_jobs"
 
 # Step 3: Determine if each job is a multibranch pipeline and get valid multibranch jobs
 echo -e "[${FUNCNAME[0]}] Step 3: Determining multibranch jobs and their valid branches/PRs..."
-declare -A agent_usage
 for job_name in $all_jobs; do
     if is_multibranch_job "$job_name"; then
         echo "[${FUNCNAME[0]}] Checking multibranch job: $job_name..."
@@ -197,5 +210,21 @@ echo "$sorted_agents"
 # Step 7: Timestamps for each agent
 echo "Step 7: Timestamps for each agent:"
 for agent in "${!agent_timestamps[@]}"; do
-    echo "Agent: $agent, Latest Build Timestamp: ${agent_timestamps[$agent]} ($(convert_timestamp_to_date ${agent_timestamps[$agent]}))"
+    if is_agent_active "$agent"; then
+        active_agents["$agent"]="${agent_timestamps[$agent]}"
+    else
+        inactive_agents["$agent"]="${agent_timestamps[$agent]}"
+    fi
+done
+
+# Display active agents
+echo "Active Agents:"
+for agent in "${!active_agents[@]}"; do
+    echo "Agent: $agent, Latest Build Timestamp: ${active_agents[$agent]} ($(convert_timestamp_to_date ${active_agents[$agent]}))"
+done
+
+# Display inactive agents
+echo -e "\nInactive Agents:"
+for agent in "${!inactive_agents[@]}"; do
+    echo "Agent: $agent, Latest Build Timestamp: ${inactive_agents[$agent]} ($(convert_timestamp_to_date ${inactive_agents[$agent]}))"
 done
