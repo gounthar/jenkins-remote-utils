@@ -17,6 +17,18 @@ declare -A agent_timestamps  # New line to declare the associative array
 declare -A active_agents  # New line to declare the associative array
 declare -A inactive_agents  # New line to declare the associative array
 
+# Function to print a title with a colored background
+function print_title() {
+    local title_text=$1
+    echo -e "\e[44m\e[97m$title_text\e[0m"  # Blue background, white text, reset formatting
+}
+
+# Function to print a colored subtitle
+function print_subtitle() {
+    local subtitle_text=$1
+    echo -e "\e[96m$subtitle_text\e[0m"  # Cyan text, reset formatting
+}
+
 function make_jenkins_api_request() {
     local api_endpoint=$1
     curl -s -k -u $USERNAME:$API_TOKEN "${JENKINS_URL}${api_endpoint}"
@@ -144,6 +156,13 @@ function extract_agent_info_from_console() {
             if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
                 agent_timestamps["$line"]="$build_timestamp"
             fi
+
+            # Determine if the agent is active or inactive
+            if is_agent_active "$line"; then
+                active_agents["$line"]="${agent_timestamps[$line]}"
+            else
+                inactive_agents["$line"]="${agent_timestamps[$line]}"
+            fi
         done <<< "$agent_info"
     elif [ -n "$agent_info" ]; then
         agent_usage["$agent_info"]=$((agent_usage["$agent_info"] + 1))
@@ -154,6 +173,13 @@ function extract_agent_info_from_console() {
         local current_timestamp="${agent_timestamps[$agent_info]}"
         if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
             agent_timestamps["$agent_info"]="$build_timestamp"
+        fi
+
+        # Determine if the agent is active or inactive
+        if is_agent_active "$agent_info"; then
+            active_agents["$agent_info"]="${agent_timestamps[$agent_info]}"
+        else
+            inactive_agents["$agent_info"]="${agent_timestamps[$agent_info]}"
         fi
     fi
 }
@@ -166,8 +192,9 @@ function convert_timestamp_to_date() {
 
 # Step 1: Gather a list of all defined agents
 agents=$(get_defined_agents)
+print_title "Step 1: Gather a list of all defined agents"
 for agent in $agents; do
-  echo "Agent: $agent"
+    echo "Agent: $agent"
 done
 
 # Step 2: Get information about each job
@@ -189,12 +216,13 @@ for job_name in $all_jobs; do
 done
 
 # Step 4: Display the agents and their usage count
-echo "Agents and their usage count:"
+print_title "Step 4: Display the agents and their usage count"
 for agent in "${!agent_usage[@]}"; do
     echo "Agent: $agent, Usage: ${agent_usage[$agent]}"
 done
 
 # Step 5: Sort the agents based on their usage (descending order)
+print_title "Step 5: Sort the agents based on their usage (descending order)"
 sorted_agents=$(for agent in "${!agent_usage[@]}"; do
     echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: ${agent_timestamps[$agent]}"
 done | sort -k8 -nr)
@@ -203,23 +231,21 @@ done | sort -k8 -nr)
 echo "Sorted Agents and their usage count:"
 echo "$sorted_agents"
 
-# Step 7: Timestamps for each agent
-for agent in "${!agent_timestamps[@]}"; do
-    if is_agent_active "$agent"; then
-        active_agents["$agent"]="${agent_timestamps[$agent]}"
-    else
-        inactive_agents["$agent"]="${agent_timestamps[$agent]}"
-    fi
-done
-
 # Display active agents
-echo "Active Agents:"
+print_subtitle "Active Agents:"
 for agent in "${!active_agents[@]}"; do
     echo "Agent: $agent, Latest Build Timestamp: ${active_agents[$agent]} ($(convert_timestamp_to_date ${active_agents[$agent]}))"
 done
 
 # Display inactive agents
-echo -e "\nInactive Agents:"
+print_subtitle "Inactive Agents:"
 for agent in "${!inactive_agents[@]}"; do
     echo "Agent: $agent, Latest Build Timestamp: ${inactive_agents[$agent]} ($(convert_timestamp_to_date ${inactive_agents[$agent]}))"
 done
+
+
+
+
+
+
+
