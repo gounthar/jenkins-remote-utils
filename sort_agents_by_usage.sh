@@ -12,21 +12,19 @@ if [[ -z "$JENKINS_URL" || -z "$USERNAME" || -z "$API_TOKEN" ]]; then
     exit 1
 fi
 
-declare -A agent_usage  # New line to declare the associative array
-declare -A agent_timestamps  # New line to declare the associative array
-declare -A active_agents  # New line to declare the associative array
-declare -A inactive_agents  # New line to declare the associative array
+declare -A agent_usage
+declare -A agent_timestamps
+declare -A active_agents
+declare -A inactive_agents
 
-# Function to print a title with a colored background
 function print_title() {
     local title_text=$1
-    echo -e "\e[44m\e[97m$title_text\e[0m"  # Blue background, white text, reset formatting
+    echo -e "\e[44m\e[97m$title_text\e[0m"
 }
 
-# Function to print a colored subtitle
 function print_subtitle() {
     local subtitle_text=$1
-    echo -e "\e[96m$subtitle_text\e[0m"  # Cyan text, reset formatting
+    echo -e "\e[96m$subtitle_text\e[0m"
 }
 
 function make_jenkins_api_request() {
@@ -41,15 +39,20 @@ function get_defined_agents() {
     echo "$agents_info" | jq -r '.computer | map(select(.displayName != null)) | .[].displayName'
 }
 
-# Function to check if an agent is active or inactive
 function is_agent_active() {
     local agent=$1
     local api_endpoint="/computer/$agent/api/json"
     local agent_info
     agent_info=$(make_jenkins_api_request "$api_endpoint")
-    local offline
-    offline=$(echo "$agent_info" | jq -r '.offline')
-    [ "$offline" = "false" ]
+
+    # Check if the agent exists and is not offline
+    if [ -n "$agent_info" ]; then
+        local offline
+        offline=$(echo "$agent_info" | jq -r '.offline')
+        [ "$offline" = "false" ]
+    else
+        false
+    fi
 }
 
 function get_all_jobs() {
@@ -59,61 +62,18 @@ function get_all_jobs() {
     echo "$all_jobs"
 }
 
-function is_multibranch_job() {
+function get_last_build_number_for_job() {
     local job_name=$1
-    local api_endpoint="/job/$job_name/api/json"
-    local job_info
-    job_info=$(make_jenkins_api_request "$api_endpoint")
-
-    if [ -z "$job_info" ]; then
-        echo "Error: Unable to retrieve information for job $job_name"
-        return
-    fi
-
-    # Check if the job is a multibranch pipeline
-    local job_class
-    job_class=$(echo "$job_info" | jq -r '._class')
-    [ "$job_class" = "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" ]
-}
-
-function get_valid_multibranch_jobs() {
-    local job_name=$1
-    local api_endpoint="/job/$job_name/api/json"
-    local job_info
-    job_info=$(make_jenkins_api_request "$api_endpoint")
-
-    if [ -z "$job_info" ]; then
-        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
-        return
-    fi
-
-    # Get valid multibranch jobs for the given job_name
-    local multibranch_jobs
-    multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
-    echo "$multibranch_jobs"
-}
-
-function get_last_10_builds_for_job() {
-    local job_url=${1//$JENKINS_URL/}
-    local api_endpoint="api/json"
-    local job_info
-    job_info=$(make_jenkins_api_request "$job_url$api_endpoint")
-
-    if [ -z "$job_info" ]; then
-        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url"
-        return
-    fi
-
-    # Get the last 10 build numbers for the job
-    local builds_info
-    builds_info=$(echo "$job_info" | jq -r '.builds | .[].number')
-    echo "$builds_info"
+    local api_endpoint="/job/$job_name/lastBuild/api/json"
+    local last_build_info
+    last_build_info=$(make_jenkins_api_request "$api_endpoint")
+    echo "$last_build_info" | jq -r '.number'
 }
 
 function get_build_timestamp() {
-    local job_name=${1//$JENKINS_URL/}
+    local job_name=$1
     local build_number=$2
-    local api_endpoint="${job_name}/${build_number}/api/json?pretty=true"
+    local api_endpoint="/job/$job_name/$build_number/api/json?pretty=true"
     local build_info
     build_info=$(make_jenkins_api_request "$api_endpoint")
 
@@ -122,21 +82,70 @@ function get_build_timestamp() {
         return
     fi
 
-    # Get the timestamp of the build
+    # Debug output: Display the raw response from Jenkins API
+    echo "[${FUNCNAME[0]}] Raw Build Info for job: $job_name, build: $build_number"
+    echo "$build_info"
+
+    # Check if the build information contains a valid timestamp
     local timestamp
     timestamp=$(echo "$build_info" | jq -r '.timestamp')
+
+    # Debug output: Display the extracted timestamp
+    echo "[${FUNCNAME[0]}] Extracted Timestamp for job: $job_name, build: $build_number"
+    echo "$timestamp"
+
+    if ! [[ "$timestamp" =~ ^[0-9]+$ ]]; then
+        echo "[${FUNCNAME[0]}] Error: Invalid timestamp for job: $job_name, build: $build_number"
+        return
+    fi
+
     echo "$timestamp"
 }
 
-function get_build_console_text() {
-    local job_name=${1//$JENKINS_URL/}
-    local build_number=$2
+function extract_agent_info_from_build_info() {
+    local build_info=$1
 
-    local api_endpoint="${job_name}/${build_number}/consoleText"
-    local console_output
-    console_output=$(make_jenkins_api_request "$api_endpoint")
+    # Extract agent information from the build information
+    local agent_info
+    agent_info=$(echo "$build_info" | jq -r '.builtOn')
 
-    echo "$console_output"
+    if [ -n "$agent_info" ]; then
+        agent_usage["$agent_info"]=$((agent_usage["$agent_info"] + 1))
+
+        # Get the build timestamp and update the agent's timestamp if it's greater
+        local timestamp
+        timestamp=$(echo "$build_info" | jq -r '.timestamp')
+        local current_timestamp="${agent_timestamps[$agent_info]}"
+        if [ -z "$current_timestamp" ] || [ "$timestamp" -gt "$current_timestamp" ]; then
+            agent_timestamps["$agent_info"]="$timestamp"
+        fi
+
+        # Determine if the agent is active or inactive
+        if is_agent_active "$agent_info"; then
+            active_agents["$agent_info"]="${agent_timestamps[$agent_info]}"
+        else
+            inactive_agents["$agent_info"]="${agent_timestamps[$agent_info]}"
+        fi
+    else
+        # If there is no agent information in the build information, consider it as an unknown agent
+        local unknown_agent="UnknownAgent"
+        agent_usage["$unknown_agent"]=$((agent_usage["$unknown_agent"] + 1))
+
+        # Get the build timestamp and update the agent's timestamp if it's greater
+        local timestamp
+        timestamp=$(echo "$build_info" | jq -r '.timestamp')
+        local current_timestamp="${agent_timestamps["$unknown_agent"]}"
+        if [ -z "$current_timestamp" ] || [ "$timestamp" -gt "$current_timestamp" ]; then
+            agent_timestamps["$unknown_agent"]="$timestamp"
+        fi
+
+        # Determine if the agent is active or inactive
+        if is_agent_active "$unknown_agent"; then
+            active_agents["$unknown_agent"]="${agent_timestamps["$unknown_agent"]}"
+        else
+            inactive_agents["$unknown_agent"]="${agent_timestamps["$unknown_agent"]}"
+        fi
+    fi
 }
 
 function extract_agent_info_from_console() {
@@ -151,7 +160,7 @@ function extract_agent_info_from_console() {
 
             # Get the build timestamp for the current job and update the agent's timestamp if it's greater
             local build_timestamp
-            build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
+            build_timestamp=$(get_build_timestamp "$job_name" "$build_number")
             local current_timestamp="${agent_timestamps[$line]}"
             if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
                 agent_timestamps["$line"]="$build_timestamp"
@@ -169,7 +178,7 @@ function extract_agent_info_from_console() {
 
         # Get the build timestamp for the current job and update the agent's timestamp if it's greater
         local build_timestamp
-        build_timestamp=$(get_build_timestamp "$valid_job_url" "$build_number")
+        build_timestamp=$(get_build_timestamp "$job_name" "$build_number")
         local current_timestamp="${agent_timestamps[$agent_info]}"
         if [ -z "$current_timestamp" ] || [ "$build_timestamp" -gt "$current_timestamp" ]; then
             agent_timestamps["$agent_info"]="$build_timestamp"
@@ -184,10 +193,21 @@ function extract_agent_info_from_console() {
     fi
 }
 
-# Function to convert timestamp to human-readable date
 function convert_timestamp_to_date() {
     local timestamp=$1
-    date -d "@$((timestamp / 1000))" +"%Y-%m-%d %H:%M:%S"
+    if [ -n "$timestamp" ]; then
+        date -d "@$((timestamp / 1000))" +"%Y-%m-%d %H:%M:%S"
+    else
+        echo "Unknown Timestamp"
+    fi
+}
+
+# Step 4: Display the agents and their usage count
+function display_agents_usage() {
+    echo "Step 4: Display the agents and their usage count"
+    for agent in "${!agent_usage[@]}"; do
+        echo "Agent: $agent, Usage: ${agent_usage[$agent]}"
+    done
 }
 
 # Step 1: Gather a list of all defined agents
@@ -200,31 +220,31 @@ done
 # Step 2: Get information about each job
 all_jobs=$(get_all_jobs)
 
-# Step 3: Determine if each job is a multibranch pipeline and get valid multibranch jobs
-for job_name in $all_jobs; do
-    if is_multibranch_job "$job_name"; then
-        valid_multibranch_jobs=$(get_valid_multibranch_jobs "$job_name")
-        for valid_job_url in $valid_multibranch_jobs; do
-            last_10_builds=$(get_last_10_builds_for_job "$valid_job_url")
-            for build_number in $last_10_builds; do
-                console_text=$(get_build_console_text "$valid_job_url" "$build_number")
-                echo "$console_text" > "console_output.txt"  # Save console output to a file
-                extract_agent_info_from_console "console_output.txt"
-            done
-        done
+# Step 3: Get the latest build timestamp for each agent
+echo "Step 3: Get the latest build timestamp for each agent"
+for agent in $agents; do
+    last_build_number=$(get_last_build_number_for_job "$agent")
+    if [ -n "$last_build_number" ]; then
+        # Use a different function to get the build timestamp
+        build_timestamp=$(get_build_timestamp "$agent" "$last_build_number")
+        if [ -n "$build_timestamp" ]; then
+            agent_timestamps["$agent"]="$build_timestamp"
+        fi
     fi
 done
 
 # Step 4: Display the agents and their usage count
-print_title "Step 4: Display the agents and their usage count"
-for agent in "${!agent_usage[@]}"; do
-    echo "Agent: $agent, Usage: ${agent_usage[$agent]}"
-done
+display_agents_usage
 
 # Step 5: Sort the agents based on their usage (descending order)
 print_title "Step 5: Sort the agents based on their usage (descending order)"
 sorted_agents=$(for agent in "${!agent_usage[@]}"; do
-    echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: ${agent_timestamps[$agent]}"
+    # Check if the timestamp is a valid number before including it in the output
+    if [[ "${agent_timestamps[$agent]}" =~ ^[0-9]+$ ]]; then
+        echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: ${agent_timestamps[$agent]}"
+    else
+        echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: Unknown (Invalid Timestamp)"
+    fi
 done | sort -k8 -nr)
 
 # Step 6: Display the sorted agents and their usage count
@@ -242,10 +262,3 @@ print_subtitle "Inactive Agents:"
 for agent in "${!inactive_agents[@]}"; do
     echo "Agent: $agent, Latest Build Timestamp: ${inactive_agents[$agent]} ($(convert_timestamp_to_date ${inactive_agents[$agent]}))"
 done
-
-
-
-
-
-
-
