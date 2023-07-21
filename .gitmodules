@@ -1,0 +1,3 @@
+[submodule "GSoC-2023-docker-based-quickstart"]
+	path = GSoC-2023-docker-based-quickstart
+	url = https://github.com/ash-sxn/GSoC-2023-docker-based-quickstart.git
