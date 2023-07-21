@@ -79,8 +79,8 @@ function get_last_10_builds_for_job() {
     fi
 
     # Debug: Output the API response for the job
-    echo "API Response for job $job_url:"
-    echo "$job_info"
+    # echo "API Response for job $job_url:"
+    # echo "$job_info"
 
     # Get the last 10 build numbers for the job
     local builds_info

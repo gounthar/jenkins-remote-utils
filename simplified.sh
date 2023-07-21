@@ -75,11 +75,14 @@ for job in "${multibranch_jobs[@]}"; do
         # Extract the sub-job name from the URL
         sub_job=$(basename "$sub_job_url")
         valid_multibranch_jobs+=("$sub_job")
+        get_agents_for_builds ""$job/job/$sub_job""
     done < <(get_valid_multibranch_jobs "$job")
 
     # Display the sub-jobs for the current multibranch pipeline job
     for sub_job in "${valid_multibranch_jobs[@]}"; do
         echo "Sub-Job: $sub_job"
+        last_10_builds=$(get_last_10_builds_for_job "$job/job/$sub_job")
+        echo "Last 10 Builds: $last_10_builds"
     done
     echo
 done
