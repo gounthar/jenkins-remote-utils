@@ -26,8 +26,15 @@ source ./jenkins_agents.sh
 # Source the job-related functions from jenkins_jobs.sh
 source ./jenkins_jobs.sh
 
+
+# Print the main title
+print_title "Jenkins Job Summary"
+
 # Gather a list of all defined agents
 get_defined_agents
+
+# Print the title for the first multibranch job
+print_subtitle "Finding jobs"
 
 # Get information about each job and save it to a temporary file
 TEMP_JOB_FILE=$(mktemp)
@@ -41,18 +48,23 @@ while read -r job; do
     fi
 done < "$TEMP_JOB_FILE"
 
-# Function to get the last 10 builds for a job
+# Function to get the last 10 builds for a job, handling possible null values
 function get_last_10_build_numbers_for_job() {
     local job_name="$1"
     builds=()
     while read -r build_number; do
-        builds+=("$build_number")
+        if [[ -n "$build_number" ]]; then
+            builds+=("$build_number")
+        fi
     done < <(get_last_build_numbers_for_job "$job_name" 10)
     echo "${builds[@]}"
 }
 
 # Associative array to store the job builds
 declare -A job_builds
+
+# Print the title for the first multibranch job
+print_subtitle "Finding sub jobs in multibranch pipelines"
 
 # Gather sub-jobs for each multibranch pipeline job
 for job in "${multibranch_jobs[@]}"; do
@@ -68,6 +80,9 @@ for job in "${multibranch_jobs[@]}"; do
     echo "Sub-jobs for $job: ${valid_multibranch_jobs[@]}"
     job_tree["$job"]=${valid_multibranch_jobs[@]} # Store sub-jobs under parent job in the tree
 done
+
+# Print the title for the first multibranch job
+print_subtitle "Finding last 10 builds for each and every job"
 
 # Gather the last 10 builds for each job (including base jobs and sub-jobs of multibranch jobs)
 while read -r job; do
@@ -87,6 +102,10 @@ while read -r job; do
     fi
 done < "$TEMP_JOB_FILE"
 
+
+# Print the title for the first multibranch job
+print_subtitle "Our results"
+
 # Display the job builds and tree-like structure
 for job in "${!job_tree[@]}"; do
     echo "Job: $job"
@@ -95,11 +114,21 @@ for job in "${!job_tree[@]}"; do
         echo "Sub-jobs: $sub_jobs"
         for sub_job in $sub_jobs; do
             echo "  Sub-job: $sub_job"
-            echo "  Last 10 Builds: ${job_builds["$job/$sub_job"]}"
+            sub_job_builds=${job_builds["$job/$sub_job"]}
+            if [[ -n "$sub_job_builds" ]]; then
+                echo "  Last 10 Builds: ${sub_job_builds}"
+            else
+                echo "  Last 10 Builds: N/A"
+            fi
             echo
         done
     else
-        echo "Last 10 Builds: ${job_builds["$job"]}"
+        job_builds_info=${job_builds["$job"]}
+        if [[ -n "$job_builds_info" ]]; then
+            echo "Last 10 Builds: ${job_builds_info}"
+        else
+            echo "Last 10 Builds: N/A"
+        fi
         echo
     fi
 done

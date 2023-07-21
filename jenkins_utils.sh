@@ -7,6 +7,11 @@ function print_title() {
 
 function print_subtitle() {
     local subtitle_text=$1
+    echo -e "\n\e[1m\e[104m\e[97m$subtitle_text\e[0m"
+}
+
+function print_subsubtitle() {
+    local subtitle_text=$1
     echo -e "\e[96m$subtitle_text\e[0m"
 }
 
