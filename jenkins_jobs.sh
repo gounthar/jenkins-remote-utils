@@ -71,12 +71,16 @@ function get_last_10_builds_for_job() {
     local job_url=${1//$JENKINS_URL/}
     local api_endpoint="api/json"
     local job_info
-    job_info=$(make_jenkins_api_request "$job_url$api_endpoint")
+    job_info=$(make_jenkins_api_request "/job/$job_url/$api_endpoint")
 
     if [ -z "$job_info" ]; then
-        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url"
+        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url using /job/$job_url/$api_endpoint"
         return
     fi
+
+    # Debug: Output the API response for the job
+    echo "API Response for job $job_url:"
+    echo "$job_info"
 
     # Get the last 10 build numbers for the job
     local builds_info
