@@ -4,10 +4,10 @@
 source ./jenkins_utils.sh
 
 function get_defined_agents() {
-    local api_endpoint=/computer/api/json
-    local agents_info
-    agents_info=$(make_jenkins_api_request $api_endpoint)
-    echo "$agents_info" | jq -r '.computer | map(select(.displayName != null)) | .[].displayName'
+    local api_endpoint="/computer/api/json"
+    local defined_agents
+    defined_agents=$(make_jenkins_api_request "$api_endpoint" | jq -r '.computer | .[].displayName')
+    echo "$defined_agents"
 }
 
 function is_agent_active() {
@@ -33,9 +33,5 @@ function extract_agent_info_from_build_info() {
     local agent_info
     agent_info=$(echo "$build_info" | jq -r '.builtOn')
 
-    if [ -n "$agent_info" ]; then
-        echo "$agent_info"
-    else
-        echo "UnknownAgent"
-    fi
+    echo "$agent_info"
 }

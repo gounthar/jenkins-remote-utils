@@ -16,6 +16,73 @@ function get_last_build_number_for_job() {
     build_number=$(echo "$last_build_info" | jq -r '.number')
     echo "$build_number"
 }
+function is_multibranch_job() {
+    # set -x
+    local job_name=$1
+    local api_endpoint="/job/$job_name/api/json"
+    local job_info
+    job_info=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$job_info" ]; then
+        echo "Error: Unable to retrieve information for job $job_name"
+        return
+    fi
+
+    # Check if the job is a multibranch pipeline
+    local job_class
+    job_class=$(echo "$job_info" | jq -r '._class')
+    [ "$job_class" = "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject" ]
+}
+
+function get_multibranch_pipeline_jobs() {
+    local api_endpoint="/api/json"
+    local all_jobs
+    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
+
+    # Filter only the multi-branch pipeline jobs
+    local multibranch_jobs
+    while read -r job; do
+        if is_multibranch_job "$job"; then
+            multibranch_jobs+=" $job"
+        fi
+    done <<< "$all_jobs"
+
+    echo "$multibranch_jobs"
+}
+
+function get_valid_multibranch_jobs() {
+    local job_name=$1
+    local api_endpoint="/job/$job_name/api/json"
+    local job_info
+    job_info=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$job_info" ]; then
+        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+        return
+    fi
+
+    # Get valid multibranch jobs for the given job_name
+    local multibranch_jobs
+    multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
+    echo "$multibranch_jobs"
+}
+
+function get_last_10_builds_for_job() {
+    local job_url=${1//$JENKINS_URL/}
+    local api_endpoint="api/json"
+    local job_info
+    job_info=$(make_jenkins_api_request "$job_url$api_endpoint")
+
+    if [ -z "$job_info" ]; then
+        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url"
+        return
+    fi
+
+    # Get the last 10 build numbers for the job
+    local builds_info
+    builds_info=$(echo "$job_info" | jq -r '.builds | .[].number')
+    echo "$builds_info"
+}
 
 function get_build_timestamp() {
     local job_name=$1
@@ -54,4 +121,12 @@ function extract_agent_info_from_console() {
     elif [ -n "$agent_info" ]; then
         echo "$agent_info"
     fi
+}
+
+function get_job_info() {
+    local job_name=$1
+    local api_endpoint="/job/$job_name/config.xml"
+    local job_info
+    job_info=$(make_jenkins_api_request "$api_endpoint")
+    echo "$job_info"
 }

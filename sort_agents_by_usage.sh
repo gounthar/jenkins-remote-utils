@@ -28,53 +28,66 @@ source ./jenkins_utils.sh
 
 # Temporary file to store data
 TEMP_FILE=$(mktemp)
+TEMP_AGENT_FILE=$(mktemp)
+TEMP_JOB_FILE=$(mktemp)
 
-# Step 4: Display the agents and their usage count
-function display_agents_usage() {
-    for agent in "${!agent_usage[@]}"; do
-        echo "Agent: $agent, Usage: ${agent_usage[$agent]}"
-    done
-}
-
-# Redirect debug output to stdout
+# Redirect debug output to temporary files
 function debug() {
-    echo "DEBUG: $@"
+    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
+}
+# Redirect debug output to temporary files
+function debug_agent() {
+    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
 }
 
-debug "Step 1: Gather a list of all defined agents"
+function debug_job() {
+    echo "DEBUG: $@" >> "$TEMP_JOB_FILE"
+}
+
+debug_agent "Step 1: Gather a list of all defined agents"
 get_defined_agents > "$TEMP_FILE"
 while read -r agent; do
-    debug "Agent: $agent"
+    debug_agent "Agent: $agent"
 done < "$TEMP_FILE"
 
-debug "Step 2: Get information about each job"
+debug_job "Step 2: Get information about each job"
 get_all_jobs > "$TEMP_FILE"
 while read -r job; do
-    debug "Job: $job"
+    debug_job "Job: $job"
 done < "$TEMP_FILE"
 
 # Step 3: Get the latest build timestamp for each agent
 get_defined_agents > "$TEMP_FILE"
 while read -r agent; do
-    debug "Getting build number for agent: $agent"
+    debug_agent "Getting build number for agent: $agent"
     agent_info=$(extract_agent_info_from_build_info "$agent")
-    debug "Raw response from Jenkins API for agent $agent:"
-    debug "$agent_info"
+    debug_agent "Raw response from Jenkins API for agent $agent:"
+    debug_agent "$agent_info"
 
     last_build_number=$(get_last_build_number_for_job "$agent_info")
     if [ -n "$last_build_number" ]; then
-        debug "Last build number for agent $agent: $last_build_number"
+        debug_agent "Last build number for agent $agent: $last_build_number"
         # Use a different function to get the build timestamp
-        build_timestamp=$(get_build_timestamp "$agent" "$last_build_number")
+        build_timestamp=$(get_build_timestamp "$agent_info" "$last_build_number")
         if [ -n "$build_timestamp" ]; then
-            debug "Build timestamp for agent $agent and build number $last_build_number: $build_timestamp"
+            debug_agent "Build timestamp for agent $agent and build number $last_build_number: $build_timestamp"
             agent_timestamps["$agent"]="$build_timestamp"
         fi
     fi
 done < "$TEMP_FILE"
 
 # Step 4: Display the agents and their usage count
-display_agents_usage > "$TEMP_FILE"
+function display_agents_usage() {
+    echo "Step 4: Display the agents and their usage count"
+    while IFS= read -r agent; do
+        echo "Agent: $agent, Usage: ${agent_usage["$agent"]}"
+    done < "$TEMP_AGENT_FILE"
+}
+
+# Redirect debug output to temporary files
+function debug() {
+    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
+}
 
 # Step 5: Sort the agents based on their usage (descending order)
 debug "Step 5: Sort the agents based on their usage (descending order)"
@@ -100,11 +113,6 @@ for agent in "${!active_agents[@]}"; do
     echo "Agent: $agent, Latest Build Timestamp: ${active_agents[$agent]} ($(convert_timestamp_to_date ${active_agents[$agent]}))"
 done
 
-# Display inactive agents
-debug "Inactive Agents:"
-for agent in "${!inactive_agents[@]}"; do
-    echo "Agent: $agent, Latest Build Timestamp: ${inactive_agents[$agent]} ($(convert_timestamp_to_date ${inactive_agents[$agent]}))"
-done
+# Clean up temporary files
+rm "$TEMP_FILE" "$TEMP_AGENT_FILE" "$TEMP_JOB_FILE"
 
-# Clean up the temporary file
-rm "$TEMP_FILE"

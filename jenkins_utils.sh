@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 function print_title() {
     local title_text=$1
     echo -e "\e[44m\e[97m$title_text\e[0m"
