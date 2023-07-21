@@ -12,6 +12,11 @@ if [[ -z "$JENKINS_URL" || -z "$USERNAME" || -z "$API_TOKEN" ]]; then
     exit 1
 fi
 
+# Associative array to store the job builds
+declare -A job_builds
+# Nested associative array to store the tree-like structure
+declare -A job_tree
+
 # Source the utility functions from jenkins_utils.sh
 source ./jenkins_utils.sh
 
@@ -21,38 +26,14 @@ source ./jenkins_agents.sh
 # Source the job-related functions from jenkins_jobs.sh
 source ./jenkins_jobs.sh
 
-# Temporary file to store data
-TEMP_AGENT_FILE=$(mktemp)
+# Gather a list of all defined agents
+get_defined_agents
+
+# Get information about each job and save it to a temporary file
 TEMP_JOB_FILE=$(mktemp)
-TEMP_MULTIBRANCH_JOB_FILE=$(mktemp)
-
-# Redirect debug output to temporary files
-function debug() {
-    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
-}
-
-# Step 1: Gather a list of all defined agents
-debug "Step 1: Gather a list of all defined agents"
-get_defined_agents > "$TEMP_AGENT_FILE"
-
-# Display the list of found agents
-echo "Agents:"
-while read -r agent; do
-    echo "Agent: $agent"
-done < "$TEMP_AGENT_FILE"
-
-# Step 2: Get information about each job
-debug "Step 2: Get information about each job"
 get_all_jobs > "$TEMP_JOB_FILE"
 
-# Display the list of declared jobs
-echo -e "\nDeclared Jobs:"
-while read -r job; do
-    echo "Job: $job"
-done < "$TEMP_JOB_FILE"
-
-# Step 4: Filter multibranch pipeline jobs
-debug "Step 4: Filter multibranch pipeline jobs"
+# Filter multibranch pipeline jobs
 multibranch_jobs=()
 while read -r job; do
     if is_multibranch_job "$job"; then
@@ -60,32 +41,68 @@ while read -r job; do
     fi
 done < "$TEMP_JOB_FILE"
 
-# Display the list of multibranch pipeline jobs
-echo -e "\nMulti-Branch Pipeline Jobs:"
-for job in "${multibranch_jobs[@]}"; do
-    echo "Job: $job"
-done
+# Function to get the last 10 builds for a job
+function get_last_10_build_numbers_for_job() {
+    local job_name="$1"
+    builds=()
+    while read -r build_number; do
+        builds+=("$build_number")
+    done < <(get_last_build_numbers_for_job "$job_name" 10)
+    echo "${builds[@]}"
+}
 
-# Step 5: Get sub-jobs for each multibranch pipeline job
-echo -e "\nSub-Jobs for Multi-Branch Pipeline Jobs:"
+# Associative array to store the job builds
+declare -A job_builds
+
+# Gather sub-jobs for each multibranch pipeline job
 for job in "${multibranch_jobs[@]}"; do
-    echo "Job: $job"
+    echo "Processing multibranch job: $job"
     valid_multibranch_jobs=()
     while read -r sub_job_url; do
         # Extract the sub-job name from the URL
         sub_job=$(basename "$sub_job_url")
         valid_multibranch_jobs+=("$sub_job")
-        get_agents_for_builds ""$job/job/$sub_job""
+        # Store the last 10 builds for the sub-job
+        job_builds["$job/$sub_job"]=$(get_last_10_build_numbers_for_job "$job/job/$sub_job")
     done < <(get_valid_multibranch_jobs "$job")
+    echo "Sub-jobs for $job: ${valid_multibranch_jobs[@]}"
+    job_tree["$job"]=${valid_multibranch_jobs[@]} # Store sub-jobs under parent job in the tree
+done
 
-    # Display the sub-jobs for the current multibranch pipeline job
-    for sub_job in "${valid_multibranch_jobs[@]}"; do
-        echo "Sub-Job: $sub_job"
-        last_10_builds=$(get_last_10_builds_for_job "$job/job/$sub_job")
-        echo "Last 10 Builds: $last_10_builds"
-    done
-    echo
+# Gather the last 10 builds for each job (including base jobs and sub-jobs of multibranch jobs)
+while read -r job; do
+    echo "Processing job: $job"
+    # Store the last 10 builds for the job
+    job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job")
+
+    # Separate base job and sub-job (if any)
+    IFS="/" read -r parent_job sub_job <<< "$job"
+    if [[ -n "$sub_job" ]]; then
+        # If sub-job, add it to the parent's sub-jobs in the tree
+        if [[ -z "${job_tree["$parent_job"]}" ]]; then
+            job_tree["$parent_job"]=$sub_job
+        else
+            job_tree["$parent_job"]+=" $sub_job"
+        fi
+    fi
+done < "$TEMP_JOB_FILE"
+
+# Display the job builds and tree-like structure
+for job in "${!job_tree[@]}"; do
+    echo "Job: $job"
+    sub_jobs=${job_tree["$job"]}
+    if [[ -n "$sub_jobs" ]]; then
+        echo "Sub-jobs: $sub_jobs"
+        for sub_job in $sub_jobs; do
+            echo "  Sub-job: $sub_job"
+            echo "  Last 10 Builds: ${job_builds["$job/$sub_job"]}"
+            echo
+        done
+    else
+        echo "Last 10 Builds: ${job_builds["$job"]}"
+        echo
+    fi
 done
 
 # Clean up temporary files
-rm "$TEMP_AGENT_FILE" "$TEMP_JOB_FILE" "$TEMP_MULTIBRANCH_JOB_FILE"
+rm "$TEMP_JOB_FILE"

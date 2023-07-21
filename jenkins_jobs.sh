@@ -3,7 +3,14 @@
 function get_all_jobs() {
     local api_endpoint="/api/json"
     local all_jobs
-    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
+    all_jobs=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$all_jobs" ]; then
+        echo "Error: Unable to retrieve job information from Jenkins API."
+        return
+    fi
+
+    all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].name')
     echo "$all_jobs"
 }
 
@@ -37,7 +44,14 @@ function is_multibranch_job() {
 function get_multibranch_pipeline_jobs() {
     local api_endpoint="/api/json"
     local all_jobs
-    all_jobs=$(make_jenkins_api_request "$api_endpoint" | jq -r '.jobs | .[].name')
+    all_jobs=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$all_jobs" ]; then
+        echo "Error: Unable to retrieve job information from Jenkins API."
+        return
+    fi
+
+    all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].name')
 
     # Filter only the multi-branch pipeline jobs
     local multibranch_jobs
@@ -49,6 +63,7 @@ function get_multibranch_pipeline_jobs() {
 
     echo "$multibranch_jobs"
 }
+
 
 function get_valid_multibranch_jobs() {
     local job_name=$1
@@ -67,7 +82,7 @@ function get_valid_multibranch_jobs() {
     echo "$multibranch_jobs"
 }
 
-function get_last_10_builds_for_job() {
+function get_last_build_numbers_for_job() {
     local job_url=${1//$JENKINS_URL/}
     local api_endpoint="api/json"
     local job_info
@@ -79,13 +94,23 @@ function get_last_10_builds_for_job() {
     fi
 
     # Debug: Output the API response for the job
-    # echo "API Response for job $job_url:"
-    # echo "$job_info"
+#    echo "API Response for job $job_url:"
+#    echo "$job_info"
 
     # Get the last 10 build numbers for the job
     local builds_info
-    builds_info=$(echo "$job_info" | jq -r '.builds | .[].number')
+    builds_info=$(echo "$job_info" | jq -r '.builds | map(.number) | join(" ")')
+    echo "Builds Info:"
     echo "$builds_info"
+}
+
+function get_last_10_build_numbers_for_job() {
+    local job_name="$1"
+    builds=()
+    while read -r build_number; do
+        builds+=("$build_number")
+    done < <(get_last_build_numbers_for_job "$job_name" 10)
+    echo "${builds[@]}"
 }
 
 function get_build_timestamp() {
@@ -112,10 +137,30 @@ function get_build_timestamp() {
     echo "$timestamp"
 }
 
-function extract_agent_info_from_console() {
-    local console_file=$1
+function get_build_console_text() {
+    local job_name=$1
+    local build_number=$2
+    local api_endpoint="/job/$job_name/$build_number/consoleText"
+    local console_text
+    console_text=$(make_jenkins_api_request "$api_endpoint")
+    echo "$console_text"
+}
+
+function get_agent_from_console() {
+    local job_name=$1
+    local build_number=$2
+    local console_text
+    console_text=$(get_build_console_text "$job_name" "$build_number")
+
+    # Now console_text contains the console output, and we can pass it to extract_agent_info_from_console
     local agent_info
-    agent_info=$(grep -o -P 'Running on \K\S+' "$console_file")
+    agent_info=$(extract_agent_info_from_console <<< "$console_text")
+    echo "$agent_info"
+}
+
+function extract_agent_info_from_console() {
+    local agent_info
+    agent_info=$(grep -o -P 'Running on \K\S+')
 
     # Check if there are multiple agent names in the output
     if [ $(echo "$agent_info" | wc -l) -gt 1 ]; then
@@ -125,6 +170,42 @@ function extract_agent_info_from_console() {
     elif [ -n "$agent_info" ]; then
         echo "$agent_info"
     fi
+}
+
+
+# Function to get the usage count of an agent
+function get_agent_usage_count() {
+    local agent_name=$1
+    local usage_count=${agent_usage_count["$agent_name"]}
+    echo "$usage_count"
+}
+
+
+# Function to get the last used timestamp of an agent
+function get_agent_last_used_timestamp() {
+    local agent_name=$1
+    local last_used_timestamp=""
+
+    # Loop through all the multibranch pipeline jobs
+    for job in "${multibranch_jobs[@]}"; do
+        valid_multibranch_jobs=()
+        while read -r sub_job_url; do
+            # Extract the sub-job name from the URL
+            sub_job=$(basename "$sub_job_url")
+            valid_multibranch_jobs+=("$sub_job")
+            agent=$(get_agent_for_sub_job "$job" "$sub_job")
+            if [ "$agent" == "$agent_name" ]; then
+                # Get the last build timestamp for the sub-job
+                last_build_number=$(get_last_build_number_for_job "$job/job/$sub_job")
+                timestamp=$(get_build_timestamp "$job/job/$sub_job" "$last_build_number")
+                if [ -n "$timestamp" ] && [ "$timestamp" -gt "$last_used_timestamp" ]; then
+                    last_used_timestamp="$timestamp"
+                fi
+            fi
+        done < <(get_valid_multibranch_jobs "$job")
+    done
+
+    echo "$last_used_timestamp"
 }
 
 function get_job_info() {
