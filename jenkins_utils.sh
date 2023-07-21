@@ -41,11 +41,11 @@ function make_jenkins_api_request() {
 
   # Now, concatenate the two parts
   url="${JENKINS_URL}/${api_endpoint}"
-
   # Use the updated URL with curl
   curl -s -k -u "$USERNAME:$API_TOKEN" "$url"
 
   debug_message "[${FUNCNAME[0]}] URL: $url"
+  debug_message "$(curl -s -k -u "$USERNAME:$API_TOKEN" "$url")"
 
   # curl -s -k -u $USERNAME:$API_TOKEN "${JENKINS_URL}${api_endpoint}"
 }

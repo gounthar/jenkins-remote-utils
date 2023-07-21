@@ -10,7 +10,7 @@ function get_all_jobs() {
     return
   fi
 
-  all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].name')
+  all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].url' | awk -F'/' '{print $(NF-1)}')
   echo "$all_jobs"
 }
 

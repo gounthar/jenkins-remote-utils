@@ -11,10 +11,10 @@ declare -A agent_usage_count
 declare -A agent_last_used_timestamp
 
 function get_defined_agents() {
-  local api_endpoint="/computer/api/json"
+  local api_endpoint="/computer/api/json?pretty=true"
   local defined_agents
   defined_agents=$(make_jenkins_api_request "$api_endpoint" | jq -r '.computer | .[].displayName')
-  echo "$defined_agents"
+  info_message "$defined_agents"
 }
 
 function is_agent_active() {
