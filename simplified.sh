@@ -42,6 +42,22 @@ TEMP_JOB_FILE=$(mktemp)
 get_all_jobs >"$TEMP_JOB_FILE"
 cat "$TEMP_JOB_FILE"
 
+# Filter pipeline jobs
+pipeline_jobs=()
+while read -r job; do
+  if is_pipeline_job "$job"; then
+    pipeline_jobs+=("$job")
+  fi
+done <"$TEMP_JOB_FILE"
+
+# Filter freestyle jobs
+freestyle_jobs=()
+while read -r job; do
+  if is_freestyle_job "$job"; then
+    freestyle_jobs+=("$job")
+  fi
+done <"$TEMP_JOB_FILE"
+
 # Filter multibranch pipeline jobs
 multibranch_jobs=()
 while read -r job; do
@@ -76,7 +92,7 @@ print_subtitle "Finding last 10 builds for each and every job"
 # Gather the last 10 builds for each job (including base jobs and sub-jobs of multibranch jobs)
 while read -r job; do
   job_short_path=${job//$JENKINS_URL/}
-  echo "Processing job: $job_short_path"
+  echo "Processing job: $job with path $job_short_path"
   # Store the last 10 builds for the job
   job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job_short_path")
 
@@ -97,6 +113,20 @@ while read -r job; do
     #get_agents_for_builds "$job" job_builds["$job"]
   fi
 done < <(get_valid_multibranch_jobs "$job") # was "$TEMP_JOB_FILE"
+
+# Add freestyle jobs to the job tree
+for job in "${freestyle_jobs[@]}"; do
+  # Since freestyle jobs have no sub-jobs, we directly add them to the job_tree
+  job_tree["$job"]="" # Empty string for sub-jobs since there are none
+  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the freestyle job
+done
+
+# Add pipeline jobs to the job tree
+for job in "${pipeline_jobs[@]}"; do
+  # Since pipeline jobs have no sub-jobs, we directly add them to the job_tree
+  job_tree["$job"]="" # Empty string for sub-jobs since there are none
+  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the pipeline job
+done
 
 # Print the title for the first multibranch job
 print_subtitle "Our results"

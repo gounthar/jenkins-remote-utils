@@ -13,21 +13,29 @@ function info_message() {
   echo -e "\e[1;33m[INFO] $message\e[0m"
 }
 
+function error_message() {
+  local message="$1"
+  echo -e "\e[1;91m[ERROR] $message\e[0m" >>"$TEMP_DEBUG_FILE"
+}
+
 info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
 
 function print_title() {
   local title_text=$1
   echo -e "\e[44m\e[97m$title_text\e[0m"
+  debug_message "\e[44m\e[97m$title_text\e[0m"
 }
 
 function print_subtitle() {
   local subtitle_text=$1
   echo -e "\n\e[1m\e[104m\e[97m$subtitle_text\e[0m"
+  debug_message "\n\e[1m\e[104m\e[97m$subtitle_text\e[0m"
 }
 
 function print_subsubtitle() {
   local subtitle_text=$1
   echo -e "\e[96m$subtitle_text\e[0m"
+  debug_message "\e[96m$subtitle_text\e[0m"
 }
 
 function make_jenkins_api_request() {

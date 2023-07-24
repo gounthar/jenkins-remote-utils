@@ -6,7 +6,7 @@ function get_all_jobs() {
   all_jobs=$(make_jenkins_api_request "$api_endpoint")
 
   if [ -z "$all_jobs" ]; then
-    echo "Error: Unable to retrieve job information from Jenkins API."
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve job information from Jenkins API."
     return
   fi
 
@@ -24,6 +24,40 @@ function get_last_build_number_for_job() {
   echo "$build_number"
 }
 
+function is_freestyle_job() {
+  local job_name=$1
+  local api_endpoint="/job/$job_name/api/json"
+  local job_info
+  job_info=$(make_jenkins_api_request "$api_endpoint")
+
+  if [ -z "$job_info" ]; then
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+    return
+  fi
+
+  # Check if the job is a freestyle job
+  local job_class
+  job_class=$(echo "$job_info" | jq -r '._class')
+  [ "$job_class" = "hudson.model.FreeStyleProject" ]
+}
+
+function is_pipeline_job() {
+  local job_name=$1
+  local api_endpoint="/job/$job_name/api/json"
+  local job_info
+  job_info=$(make_jenkins_api_request "$api_endpoint")
+
+  if [ -z "$job_info" ]; then
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+    return
+  fi
+
+  # Check if the job is a pipeline job
+  local job_class
+  job_class=$(echo "$job_info" | jq -r '._class')
+  [ "$job_class" = "org.jenkinsci.plugins.workflow.job.WorkflowJob" ]
+}
+
 function is_multibranch_job() {
   # set -x
   local job_name=$1
@@ -32,7 +66,7 @@ function is_multibranch_job() {
   job_info=$(make_jenkins_api_request "$api_endpoint")
 
   if [ -z "$job_info" ]; then
-    echo "Error: Unable to retrieve information for job $job_name"
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
     return
   fi
 
@@ -48,11 +82,11 @@ function get_multibranch_pipeline_jobs() {
   all_jobs=$(make_jenkins_api_request "$api_endpoint")
 
   if [ -z "$all_jobs" ]; then
-    echo "Error: Unable to retrieve job information from Jenkins API."
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve job information from Jenkins API."
     return
   fi
 
-  all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].name')
+  all_jobs=$(echo "$all_jobs" | jq -r '.jobs | .[].url' | awk -F'/' '{print $(NF-1)}')
 
   # Filter only the multi-branch pipeline jobs
   local multibranch_jobs
@@ -72,7 +106,7 @@ function get_valid_multibranch_jobs() {
   job_info=$(make_jenkins_api_request "$api_endpoint")
 
   if [ -z "$job_info" ]; then
-    echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
     return
   fi
 
@@ -89,7 +123,7 @@ function get_last_build_numbers_for_job() {
   job_info=$(make_jenkins_api_request "/job/$job_url/$api_endpoint")
 
   if [ -z "$job_info" ]; then
-    echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url using /job/$job_url/$api_endpoint"
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url using /job/$job_url/$api_endpoint"
     return
   fi
 
@@ -123,7 +157,7 @@ function get_last_10_build_numbers_for_job() {
   job_info=$(make_jenkins_api_request "$job_url/$api_endpoint")
 
   if [ -z "$job_info" ]; then
-    echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url using $job_url/$api_endpoint"
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_url using $job_url/$api_endpoint"
     return
   fi
 
@@ -143,7 +177,7 @@ function get_build_timestamp() {
   build_info=$(make_jenkins_api_request "$api_endpoint")
 
   if [ -z "$build_info" ]; then
-    echo "Error: Unable to retrieve build information for job: $job_name, build: $build_number" >&2
+    error_message "[${FUNCNAME[0]}] Error: Unable to retrieve build information for job: $job_name, build: $build_number" >&2
     return 1
   fi
 
@@ -152,7 +186,7 @@ function get_build_timestamp() {
   timestamp=$(echo "$build_info" | jq -r '.timestamp')
 
   if ! [[ "$timestamp" =~ ^[0-9]+$ ]]; then
-    echo "Error: Invalid timestamp for job: $job_name, build: $build_number" >&2
+    error_message "[${FUNCNAME[0]}] Error: Invalid timestamp for job: $job_name, build: $build_number" >&2
     return 1
   fi
 
@@ -243,7 +277,7 @@ function get_valid_multibranch_jobs() {
     job_info=$(make_jenkins_api_request "$api_endpoint")
 
     if [ -z "$job_info" ]; then
-        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+        error_message "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
         return
     fi
 
