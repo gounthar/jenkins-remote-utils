@@ -74,7 +74,7 @@ print_subtitle "Finding sub jobs in multibranch pipelines"
 
 # Gather sub-jobs for each multibranch pipeline job
 for job in "${multibranch_jobs[@]}"; do
-  echo "Processing multibranch job: $job"
+  standard_message "Processing multibranch job: $job"
   valid_multibranch_jobs=()
   while read -r sub_job_url; do
     # Extract the sub-job name from the URL
@@ -83,8 +83,22 @@ for job in "${multibranch_jobs[@]}"; do
     # Store the last 10 builds for the sub-job
     job_builds["$job/$sub_job"]=$(get_last_10_build_numbers_for_job "$job/job/$sub_job")
   done < <(get_valid_multibranch_jobs "$job")
-  echo "Sub-jobs for $job: ${valid_multibranch_jobs[@]}"
+  standard_message "Sub-jobs for $job: ${valid_multibranch_jobs[@]}"
   job_tree["$job"]=${valid_multibranch_jobs[@]} # Store sub-jobs under parent job in the tree
+done
+
+# Add freestyle jobs to the job tree
+for job in "${freestyle_jobs[@]}"; do
+  # Since freestyle jobs have no sub-jobs, we directly add them to the job_tree
+  job_tree["$job"]="" # Empty string for sub-jobs since there are none
+  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the freestyle job
+done
+
+# Add pipeline jobs to the job tree
+for job in "${pipeline_jobs[@]}"; do
+  # Since pipeline jobs have no sub-jobs, we directly add them to the job_tree
+  job_tree["$job"]="" # Empty string for sub-jobs since there are none
+  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the pipeline job
 done
 
 # Print the title for the first multibranch job
@@ -92,7 +106,7 @@ print_subtitle "Finding last 10 builds for each and every job"
 # Gather the last 10 builds for each job (including base jobs and sub-jobs of multibranch jobs)
 while read -r job; do
   job_short_path=${job//$JENKINS_URL/}
-  echo "Processing job: $job with path $job_short_path"
+  standard_message "Processing job: $job with path $job_short_path"
   # Store the last 10 builds for the job
   job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job_short_path")
 
@@ -114,49 +128,35 @@ while read -r job; do
   fi
 done < <(get_valid_multibranch_jobs "$job") # was "$TEMP_JOB_FILE"
 
-# Add freestyle jobs to the job tree
-for job in "${freestyle_jobs[@]}"; do
-  # Since freestyle jobs have no sub-jobs, we directly add them to the job_tree
-  job_tree["$job"]="" # Empty string for sub-jobs since there are none
-  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the freestyle job
-done
-
-# Add pipeline jobs to the job tree
-for job in "${pipeline_jobs[@]}"; do
-  # Since pipeline jobs have no sub-jobs, we directly add them to the job_tree
-  job_tree["$job"]="" # Empty string for sub-jobs since there are none
-  job_builds["$job"]=$(get_last_10_build_numbers_for_job "$job") # Store the last 10 builds for the pipeline job
-done
-
 # Print the title for the first multibranch job
 print_subtitle "Our results"
 
 # Display the job builds and tree-like structure
 for job in "${!job_tree[@]}"; do
-  echo "Job: $job"
+  standard_message "Job: $job"
   sub_jobs=${job_tree["$job"]}
   if [[ -n "$sub_jobs" ]]; then
-    echo "Sub-jobs: $sub_jobs"
+    standard_message "Sub-jobs: $sub_jobs"
     for sub_job in $sub_jobs; do
-      echo "  Sub-job: $sub_job"
+      standard_message "  Sub-job: $sub_job"
       sub_job_builds=${job_builds["$job/$sub_job"]}
       if [[ -n "$sub_job_builds" ]]; then
-        echo "  Last 10 Builds: ${sub_job_builds}"
+        standard_message "  Last 10 Builds: ${sub_job_builds}"
       else
-        echo "  Last 10 Builds: N/A"
+        standard_message "  Last 10 Builds: N/A"
       fi
-      echo
+      standard_message
     done
   else
     # Call the function to get agents used for each job
     #get_agents_for_builds "$job"
     job_builds_info=${job_builds["$job"]}
     if [[ -n "$job_builds_info" ]]; then
-      echo "Last 10 Builds: ${job_builds_info}"
+      standard_message "Last 10 Builds: ${job_builds_info}"
     else
-      echo "Last 10 Builds: N/A"
+      standard_message "Last 10 Builds: N/A"
     fi
-    echo
+    standard_message
   fi
 done
 

@@ -5,17 +5,23 @@
 # $1: The debug message to print
 function debug_message() {
   local message="$1"
-  echo -e "\e[1;31m[DEBUG] $message\e[0m" >>"$TEMP_DEBUG_FILE"
+  echo -e "\e[1;31m[DEBUG]\e[0m $message\e[0m" >>"$TEMP_DEBUG_FILE"
 }
 
 function info_message() {
   local message="$1"
-  echo -e "\e[1;33m[INFO] $message\e[0m"
+  echo -e "\e[1;33m[INFO]\e[0m $message\e[0m"
 }
 
 function error_message() {
   local message="$1"
-  echo -e "\e[1;91m[ERROR] $message\e[0m" >>"$TEMP_DEBUG_FILE"
+  echo -e "\e[1;91m[ERROR]\e[0m $message\e[0m" >>"$TEMP_DEBUG_FILE"
+}
+
+function standard_message() {
+  local message="$1"
+  echo -e "\e[1;32m[MESSAGE]\e[0m $message\e[0m" >>"$TEMP_DEBUG_FILE"
+  echo -e "\e[1;32m[MESSAGE] $message\e[0m"
 }
 
 info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
