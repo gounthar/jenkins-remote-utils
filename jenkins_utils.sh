@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Colors
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+BLUE='\e[1;34m'
+NC='\e[0m'  # No Color
+
 # Function to print a debug message in red
 # Parameters:
 # $1: The debug message to print
@@ -22,6 +29,12 @@ function standard_message() {
   local message="$1"
   echo -e "\e[1;32m[MESSAGE]\e[0m $message\e[0m" >>"$TEMP_DEBUG_FILE"
   echo -e "\e[1;32m[MESSAGE] $message\e[0m"
+}
+
+# Function to display HTML results in blue
+html_message() {
+  local message="$1"
+  echo -e "${BLUE}[HTML] ${message}${NC}" >>"$TEMP_DEBUG_FILE"
 }
 
 # Function to display the contents of an associative array in a human-readable format
@@ -74,8 +87,8 @@ function make_jenkins_api_request() {
   # Use the updated URL with curl
   curl -s -k -u "$USERNAME:$API_TOKEN" "$url"
 
-  debug_message "[${FUNCNAME[0]}] URL: $url"
-  debug_message "$(curl -s -k -u "$USERNAME:$API_TOKEN" "$url")"
+  html_message "[${FUNCNAME[0]}] URL: $url"
+  # html_message "$(curl -s -k -u "$USERNAME:$API_TOKEN" "$url")"
 
   # curl -s -k -u $USERNAME:$API_TOKEN "${JENKINS_URL}${api_endpoint}"
 }
