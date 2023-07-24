@@ -24,6 +24,22 @@ function standard_message() {
   echo -e "\e[1;32m[MESSAGE] $message\e[0m"
 }
 
+# Function to display the contents of an associative array in a human-readable format
+display_associative_array() {
+  local array_name="$1"
+  local -n arr="$2"  # Take the name of the associative array as a reference
+
+  if [[ ${#arr[@]} -eq 0 ]]; then
+    standard_message "$array_name is an empty associative array."
+    return
+  fi
+
+  standard_message "Associative array \"$array_name\" contents:"
+  for key in "${!arr[@]}"; do
+    standard_message "Key: $key, Value: ${arr[$key]}"
+  done
+}
+
 info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
 
 function print_title() {

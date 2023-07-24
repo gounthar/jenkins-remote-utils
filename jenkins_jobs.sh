@@ -24,6 +24,20 @@ function get_last_build_number_for_job() {
   echo "$build_number"
 }
 
+# Function to get the job type based on its URL
+get_job_type() {
+  local job_url="$1"
+  if is_multibranch_job "$job_url"; then
+    echo "multibranch"
+  elif is_freestyle_job "$job_url"; then
+    echo "freestyle"
+  elif is_pipeline_job "$job_url"; then
+    echo "pipeline"
+  else
+    echo "unknown"
+  fi
+}
+
 function is_freestyle_job() {
   local job_name=$1
   local api_endpoint="/job/$job_name/api/json"
@@ -115,6 +129,32 @@ function get_valid_multibranch_jobs() {
   multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
   echo "$multibranch_jobs"
 }
+# Function to process a job, its sub-jobs (if any), and store the last 10 builds
+process_job() {
+  local job_url="$1"
+  local job_type="$2"
+  local job_short_path=${job_url//$JENKINS_URL/}
+  standard_message "[${FUNCNAME[0]}] Processing $job_type job: $job_url with path $job_short_path"
+
+  if [[ "$job_type" == "multibranch" ]]; then
+    standard_message "[${FUNCNAME[0]}] $job_url is a multibranch pipeline job"
+    valid_multibranch_jobs=()
+    while read -r sub_job_url; do
+      # Extract the sub-job name from the URL
+      sub_job=$(basename "$sub_job_url")
+      standard_message "[${FUNCNAME[0]}] $sub_job is a sub job of $job_url"
+      valid_multibranch_jobs+=("$sub_job")
+      # Store the last 10 builds for the sub-job
+      job_builds["$job_url/$sub_job"]=$(get_last_10_build_numbers_for_job "$job_url/job/$sub_job")
+    done < <(get_valid_multibranch_jobs "$job_url")
+    standard_message "[${FUNCNAME[0]}] Sub-jobs for $job_url: ${valid_multibranch_jobs[@]}"
+    job_tree["$job_url"]=${valid_multibranch_jobs[@]} # Store sub-jobs under parent job in the tree
+  else
+    # Since freestyle and pipeline jobs have no sub-jobs, we directly add them to the job_tree
+    job_tree["$job_url"]="" # Empty string for sub-jobs since there are none
+    job_builds["$job_url"]=$(get_last_10_build_numbers_for_job "$job_short_path") # Store the last 10 builds for the job
+  fi
+}
 
 function get_last_build_numbers_for_job() {
   local job_url=${1//$JENKINS_URL/}
@@ -134,7 +174,7 @@ function get_last_build_numbers_for_job() {
   # Get the last 10 build numbers for the job
   local builds_info
   builds_info=$(echo "$job_info" | jq -r '.builds | map(.number) | join(" ")' | tail -n 10)
-  echo "Builds Info:"
+  debug_message "Builds Info: $builds_info" | tail -n 10
   echo "$builds_info" | tail -n 10
 }
 
@@ -164,7 +204,7 @@ function get_last_10_build_numbers_for_job() {
   # Get the last 10 build numbers for the job
   local builds_info
   builds_info=$(echo "$job_info" | jq -r '.builds | map(.number) | join(" ")' | tail -n 10)
-  echo "Builds Info:"
+  debug_message "[${FUNCNAME[0]}] Builds Info: $builds_info" | tail -n 10
   echo "$builds_info" | tail -n 10
 
 }
