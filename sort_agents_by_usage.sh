@@ -7,15 +7,20 @@
 
 # Check if the required environment variables are set
 if [[ -z "$JENKINS_URL" || -z "$USERNAME" || -z "$API_TOKEN" ]]; then
-    echo "Error: Please set the required environment variables before running this script." >&2
-    echo "Required environment variables: JENKINS_URL, USERNAME, API_TOKEN" >&2
-    exit 1
+  echo "Error: Please set the required environment variables before running this script." >&2
+  echo "Required environment variables: JENKINS_URL, USERNAME, API_TOKEN" >&2
+  exit 1
 fi
 
-declare -A agent_usage
-declare -A agent_timestamps
-declare -A active_agents
-declare -A inactive_agents
+TEMP_DEBUG_FILE=$(mktemp)
+
+# Associative array to store the job builds
+declare -A job_builds
+# Nested associative array to store the tree-like structure
+declare -A job_tree
+
+# Source the utility functions from jenkins_utils.sh
+source ./jenkins_utils.sh
 
 # Source the agent-related functions from jenkins_agents.sh
 source ./jenkins_agents.sh
@@ -23,96 +28,74 @@ source ./jenkins_agents.sh
 # Source the job-related functions from jenkins_jobs.sh
 source ./jenkins_jobs.sh
 
-# Source the utility functions from jenkins_utils.sh
-source ./jenkins_utils.sh
+# Print the main title
+print_title "Jenkins Job Summary"
 
-# Temporary file to store data
-TEMP_FILE=$(mktemp)
-TEMP_AGENT_FILE=$(mktemp)
+# Gather a list of all defined agents
+get_defined_agents
+
+# Print the title for the first multibranch job
+print_subtitle "Finding jobs"
+
+# Get information about each job and save it to a temporary file
 TEMP_JOB_FILE=$(mktemp)
+get_all_jobs >"$TEMP_JOB_FILE"
+cat "$TEMP_JOB_FILE"
 
-# Redirect debug output to temporary files
-function debug() {
-    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
-}
-# Redirect debug output to temporary files
-function debug_agent() {
-    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
-}
-
-function debug_job() {
-    echo "DEBUG: $@" >> "$TEMP_JOB_FILE"
-}
-
-debug_agent "Step 1: Gather a list of all defined agents"
-get_defined_agents > "$TEMP_FILE"
-while read -r agent; do
-    debug_agent "Agent: $agent"
-done < "$TEMP_FILE"
-
-debug_job "Step 2: Get information about each job"
-get_all_jobs > "$TEMP_FILE"
+# Filter pipeline jobs
+pipeline_jobs=()
 while read -r job; do
-    debug_job "Job: $job"
-done < "$TEMP_FILE"
+  if is_pipeline_job "$job"; then
+    pipeline_jobs+=("$job")
+  fi
+done <"$TEMP_JOB_FILE"
 
-# Step 3: Get the latest build timestamp for each agent
-get_defined_agents > "$TEMP_FILE"
-while read -r agent; do
-    debug_agent "Getting build number for agent: $agent"
-    agent_info=$(extract_agent_info_from_build_info "$agent")
-    debug_agent "Raw response from Jenkins API for agent $agent:"
-    debug_agent "$agent_info"
+# Filter freestyle jobs
+freestyle_jobs=()
+while read -r job; do
+  if is_freestyle_job "$job"; then
+    freestyle_jobs+=("$job")
+  fi
+done <"$TEMP_JOB_FILE"
 
-    last_build_number=$(get_last_build_number_for_job "$agent_info")
-    if [ -n "$last_build_number" ]; then
-        debug_agent "Last build number for agent $agent: $last_build_number"
-        # Use a different function to get the build timestamp
-        build_timestamp=$(get_build_timestamp "$agent_info" "$last_build_number")
-        if [ -n "$build_timestamp" ]; then
-            debug_agent "Build timestamp for agent $agent and build number $last_build_number: $build_timestamp"
-            agent_timestamps["$agent"]="$build_timestamp"
-        fi
-    fi
-done < "$TEMP_FILE"
+# Filter multibranch pipeline jobs
+multibranch_jobs=()
+while read -r job; do
+  if is_multibranch_job "$job"; then
+    multibranch_jobs+=("$job")
+  fi
+done <"$TEMP_JOB_FILE"
 
-# Step 4: Display the agents and their usage count
-function display_agents_usage() {
-    echo "Step 4: Display the agents and their usage count"
-    while IFS= read -r agent; do
-        echo "Agent: $agent, Usage: ${agent_usage["$agent"]}"
-    done < "$TEMP_AGENT_FILE"
-}
+# Associative array to store the job builds
+declare -A job_builds
 
-# Redirect debug output to temporary files
-function debug() {
-    echo "DEBUG: $@" >> "$TEMP_AGENT_FILE"
-}
+# Print the title for the first multibranch job
+print_subtitle "Finding sub jobs in multibranch pipelines"
 
-# Step 5: Sort the agents based on their usage (descending order)
-debug "Step 5: Sort the agents based on their usage (descending order)"
-{
-    for agent in "${!agent_usage[@]}"; do
-        # Check if the timestamp is a valid number before including it in the output
-        if [[ "${agent_timestamps[$agent]}" =~ ^[0-9]+$ ]]; then
-            echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: ${agent_timestamps[$agent]}"
-        else
-            echo "Agent: $agent, Usage: ${agent_usage[$agent]}, Latest Build Timestamp: Unknown (Invalid Timestamp)"
-        fi
-    done
-} | sort -k8 -nr > "$TEMP_FILE"
+# Gather sub-jobs for each multibranch pipeline job
+while read -r job_url; do
+  job_type=$(get_job_type "$job_url")
+  if [[ "$job_type" == "multibranch" ]]; then
+    process_job "$job_url" "$job_type"
+  fi
+done <"$TEMP_JOB_FILE"
 
-# Step 6: Display the sorted agents and their usage count
-debug "Step 6: Display the sorted agents and their usage count"
-echo "Sorted Agents and their usage count:"
-cat "$TEMP_FILE"
+# Add freestyle and pipeline jobs to the job tree
+while read -r job_url; do
+  job_type=$(get_job_type "$job_url")
+  if [[ "$job_type" == "freestyle" || "$job_type" == "pipeline" ]]; then
+    process_job "$job_url" "$job_type"
+  fi
+done <"$TEMP_JOB_FILE"
 
-# Display active agents
-debug "Active Agents:"
-for agent in "${!active_agents[@]}"; do
-    echo "Agent: $agent, Latest Build Timestamp: ${active_agents[$agent]} ($(convert_timestamp_to_date ${active_agents[$agent]}))"
-done
+print_subtitle "Displaying raw associative arrays"
+# Print the associative arrays
+display_associative_array "job_builds" job_builds
+display_associative_array "job_tree" job_tree
+
+display_agents_summary
+
+info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
 
 # Clean up temporary files
-rm "$TEMP_FILE" "$TEMP_AGENT_FILE" "$TEMP_JOB_FILE"
-
+rm "$TEMP_JOB_FILE"

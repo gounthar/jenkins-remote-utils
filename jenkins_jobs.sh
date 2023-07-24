@@ -274,10 +274,15 @@ function get_build_timestamp() {
     return 1
   fi
 
+  # debug_message "[${FUNCNAME[0]}] Build Info: $build_info"
+
   # Check if the build information contains a valid timestamp
   local timestamp
   timestamp=$(echo "$build_info" | jq -r '.timestamp')
-
+  debug_message "[${FUNCNAME[0]}] Timestamp: $timestamp"
+  local last_used_date
+  last_used_date=$(date -d $timestamp '+%Y-%m-%d %H:%M:%S')
+  debug_message "[${FUNCNAME[0]}] Timestamp: $last_used_date"
   if ! [[ "$timestamp" =~ ^[0-9]+$ ]]; then
     error_message "[${FUNCNAME[0]}] Error: Invalid timestamp for job: $job_name, build: $build_number" >&2
     return 1

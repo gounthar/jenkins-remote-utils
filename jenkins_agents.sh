@@ -82,7 +82,20 @@ function display_agents_summary() {
   for agent_info in "${!agent_usage_count[@]}"; do
     echo "Agent: $agent_info"
     echo "Usage Count: ${agent_usage_count["$agent_info"]}"
-    echo "Last Used Timestamp: ${agent_last_used_timestamp["$agent_info"]}"
+
+    # Check if the timestamp is valid and non-empty
+    if [[ -n "${agent_last_used_timestamp["$agent_info"]}" && "${agent_last_used_timestamp["$agent_info"]}" != "N/A" ]]; then
+      # Convert Unix timestamp to human-readable date format using date command
+      local last_used_date
+      last_used_date=$(date -d "@${agent_last_used_timestamp["$agent_info"]}" '+%Y-%m-%d %H:%M:%S')
+      echo "Last Used Timestamp: $last_used_date"
+    else
+      echo "Last Used Timestamp: N/A"
+    fi
+
     echo
   done
 }
+
+
+
