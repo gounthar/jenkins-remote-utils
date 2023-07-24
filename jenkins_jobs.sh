@@ -132,6 +132,7 @@ function get_last_10_build_numbers_for_job() {
   builds_info=$(echo "$job_info" | jq -r '.builds | map(.number) | join(" ")' | tail -n 10)
   echo "Builds Info:"
   echo "$builds_info" | tail -n 10
+
 }
 
 function get_build_timestamp() {
@@ -233,4 +234,21 @@ function get_job_info() {
   local job_info
   job_info=$(make_jenkins_api_request "$api_endpoint")
   echo "$job_info"
+}
+
+function get_valid_multibranch_jobs() {
+    local job_name=$1
+    local api_endpoint="/job/$job_name/api/json"
+    local job_info
+    job_info=$(make_jenkins_api_request "$api_endpoint")
+
+    if [ -z "$job_info" ]; then
+        echo "[${FUNCNAME[0]}] Error: Unable to retrieve information for job $job_name"
+        return
+    fi
+
+    # Get valid multibranch jobs for the given job_name
+    local multibranch_jobs
+    multibranch_jobs=$(echo "$job_info" | jq -r '.jobs[] | select(.color != "disabled") | .url')
+    echo "$multibranch_jobs"
 }
