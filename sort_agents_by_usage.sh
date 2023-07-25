@@ -95,6 +95,8 @@ display_associative_array "job_tree" job_tree
 
 display_agents_summary
 
+sort_agents
+
 info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
 
 # Clean up temporary files
