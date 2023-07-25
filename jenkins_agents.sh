@@ -33,7 +33,93 @@ function is_agent_active() {
   fi
 }
 
+function normalize_agent_name() {
+  local agent_name="$1"
+
+  # Remove any unwanted characters or labels
+  agent_name=$(echo "$agent_name" | sed -E 's/\[Label:.*\]//')
+
+  # Trim leading/trailing whitespaces and tabs
+  agent_name=$(echo "$agent_name" | sed -E 's/^[ \t]+|[ \t]+$//')
+
+  echo "$agent_name"
+}
+
 function get_agents_for_builds() {
+  local builds="$1"
+
+  # Create associative arrays to store agent information
+  declare -A agent_usage_count
+  declare -A agent_last_used_timestamp
+
+   # Loop through each build in the builds array
+    for build in "${builds[@]}"; do
+      local console_output=$(get_console_output_for_build "$build")
+
+      # Use awk to process the console output and extract agent information
+      awk -v RS='\nRunning on ' -F '\n' '
+        function normalize_agent_name(agent_name) {
+          gsub(/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]/, "", agent_name);  # Remove ANSI color codes
+          gsub(/^\s+|\s+$/, "", agent_name);  # Trim leading/trailing whitespaces
+          return agent_name;
+        }
+
+        NF > 1 {
+          gsub(/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]/, "", $0);  # Remove ANSI color codes
+          agent_name = $1;
+          agent_name = normalize_agent_name(agent_name);  # Normalize the agent name
+          for (i = 2; i <= NF; i++) {
+            if ($i ~ /^[0-9]+ [0-9]+ [0-9]+:[0-9]+:[0-9]+$/) {
+              agent_last_used_timestamp[agent_name] = $i " " $(i-1);
+              break;
+            }
+          }
+          agent_usage_count[agent_name]++;
+        }
+      ' <<< "$console_output"
+    done
+
+  # Pass the agent information to the calling function using global variables
+  AGENT_USAGE_COUNT=("${agent_usage_count[@]}")
+  AGENT_LAST_USED_TIMESTAMP=("${agent_last_used_timestamp[@]}")
+}
+
+# Sort agents by usage count and last used timestamp
+function sort_agents() {
+
+  print_subtitle "Sorted Agents:"
+
+  sorted_agents=()
+
+  # Loop through each agent in the associative array
+  for agent in "${!agent_usage_count[@]}"; do
+    # Extract usage count and last used timestamp
+    usage_count=${agent_usage_count[$agent]}
+    last_used=${agent_last_used_timestamp[$agent]}
+
+    # Format the last used timestamp to a sortable format (YYYYMMDD HH:MM:SS)
+    # timestamp=$(date -d "$last_used" "+%Y%m%d %H:%M:%S")
+    timestamp=$last_used
+
+    # Append agent details to the array for sorting
+    sorted_agents+=("$agent,$usage_count,$timestamp")
+  done
+
+  # Sort the array by usage count (descending) and last used timestamp (ascending)
+  IFS=$'\n' sorted_agents=($(sort -t',' -k2,2nr -k3,3 <<<"${sorted_agents[*]}"))
+  unset IFS
+
+  # Print the sorted agents
+  for agent_info in "${sorted_agents[@]}"; do
+    IFS=',' read -r agent usage_count timestamp <<< "$agent_info"
+    echo "Agent: $agent"
+    echo "Usage Count: $usage_count"
+    echo "Last Used Timestamp: $timestamp"
+    echo
+  done
+}
+
+function get_agents_for_builds_works() {
   local job_name=$1
   local last_10_builds=$2 # used to be ($(get_last_10_build_numbers_for_job "$job_name"))
 
@@ -87,7 +173,7 @@ function display_agents_summary() {
     if [[ -n "${agent_last_used_timestamp["$agent_info"]}" && "${agent_last_used_timestamp["$agent_info"]}" != "N/A" ]]; then
       # Convert Unix timestamp to human-readable date format using date command
       local last_used_date
-      last_used_date=$(date -d "@${agent_last_used_timestamp["$agent_info"]}" '+%Y-%m-%d %H:%M:%S')
+      last_used_date="${agent_last_used_timestamp["$agent_info"]}"
       echo "Last Used Timestamp: $last_used_date"
     else
       echo "Last Used Timestamp: N/A"
@@ -95,7 +181,7 @@ function display_agents_summary() {
 
     echo
   done
+
+  # Display the size of the associative array
+  echo "Total Agents: ${#agent_usage_count[@]}"
 }
-
-
-

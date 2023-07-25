@@ -181,28 +181,32 @@ function get_agents_for_builds() {
 
     if [ -n "$console_output" ]; then
       debug_message "[${FUNCNAME[0]}] Job: $job_name, Build: $build_number"
-      local agent_info
-      agent_info=$(extract_agent_info_from_console "$console_output")
-      debug_message "[${FUNCNAME[0]}] Agent: $agent_info"
-      debug_message "[${FUNCNAME[0]}] --------------"
 
-      # Update the agent usage count
-      if [ -n "$agent_info" ]; then
-        if [ -z "${agent_usage_count["$agent_info"]}" ]; then
-          agent_usage_count["$agent_info"]=1
-        else
-          ((agent_usage_count["$agent_info"]++))
-        fi
+      # Update the agent usage count and last used timestamp
+      local agent_names
+      IFS=$'\n' read -r -d '' -a agent_names <<< "$(extract_agent_info_from_console "$console_output")"
+      for agent_info in "${agent_names[@]}"; do
+        debug_message "[${FUNCNAME[0]}] Agent: $agent_info"
+        debug_message "[${FUNCNAME[0]}] --------------"
 
-        # Update the last used timestamp
-        local build_timestamp
-        build_timestamp=$(get_build_timestamp "$job_name" "$build_number")
-        if [ -n "$build_timestamp" ]; then
-          if [ -z "${agent_last_used_timestamp["$agent_info"]}" ] || [ "$build_timestamp" -gt "${agent_last_used_timestamp["$agent_info"]}" ]; then
-            agent_last_used_timestamp["$agent_info"]=$build_timestamp
+        # Update the agent usage count
+        if [ -n "$agent_info" ]; then
+          if [ -z "${agent_usage_count["$agent_info"]}" ]; then
+            agent_usage_count["$agent_info"]=1
+          else
+            ((agent_usage_count["$agent_info"]++))
+          fi
+
+          # Update the last used timestamp
+          local build_timestamp
+          build_timestamp=$(get_build_timestamp "$job_name" "$build_number")
+          if [ -n "$build_timestamp" ]; then
+            if [ -z "${agent_last_used_timestamp["$agent_info"]}" ] || [ "$build_timestamp" -gt "${agent_last_used_timestamp["$agent_info"]}" ]; then
+              agent_last_used_timestamp["$agent_info"]=$build_timestamp
+            fi
           fi
         fi
-      fi
+      done
     else
       debug_message "[${FUNCNAME[0]}] Error: Unable to retrieve console output for job: $job_name, build: $build_number" >&2
     fi
@@ -280,9 +284,9 @@ function get_build_timestamp() {
   local timestamp
   timestamp=$(echo "$build_info" | jq -r '.timestamp')
   debug_message "[${FUNCNAME[0]}] Timestamp: $timestamp"
-  local last_used_date
-  last_used_date=$(date -d $timestamp '+%Y-%m-%d %H:%M:%S')
-  debug_message "[${FUNCNAME[0]}] Timestamp: $last_used_date"
+#  local last_used_date
+#  last_used_date=$(date -d $timestamp '+%Y-%m-%d %H:%M:%S')
+#  debug_message "[${FUNCNAME[0]}] Timestamp: $last_used_date"
   if ! [[ "$timestamp" =~ ^[0-9]+$ ]]; then
     error_message "[${FUNCNAME[0]}] Error: Invalid timestamp for job: $job_name, build: $build_number" >&2
     return 1
@@ -324,13 +328,29 @@ function extract_agent_info_from_console() {
 
   # Check if there are multiple agent names in the output
   if [ $(echo "$agent_info" | wc -l) -gt 1 ]; then
+        debug_message "[${FUNCNAME[0]}] Several agent names found in the console output"
     while read -r line; do
+      debug_message "[${FUNCNAME[0]}] Agent name: $line"
       [ -n "$line" ] && echo "$line"
     done <<<"$agent_info"
   elif [ -n "$agent_info" ]; then
+    debug_message "[${FUNCNAME[0]}] Only one agent name which is $agent_info"
     echo "$agent_info"
   fi
 }
+
+#function extract_agent_info_from_console() {
+#  local console_output="$1"
+#
+#  # Use grep and sed to extract lines containing the pattern 'Running on' or 'Build step'
+#  local agent_lines=$(echo "$console_output" | grep -E 'Running on|Build step')
+#
+#  # Use awk to extract the agent names from the agent_lines
+#  local agent_info=$(echo "$agent_lines" | awk -F ' in ' '{print $2}' | sort | uniq)
+#
+#  # Print the extracted agent info
+#  echo "$agent_info"
+#}
 
 # Function to get the usage count of an agent
 function get_agent_usage_count() {
