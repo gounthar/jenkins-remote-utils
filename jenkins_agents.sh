@@ -86,6 +86,9 @@ function get_agents_for_builds() {
 
 # Sort agents by usage count and last used timestamp
 function sort_agents() {
+
+  print_subtitle "Sorted Agents:"
+
   sorted_agents=()
 
   # Loop through each agent in the associative array
@@ -170,7 +173,6 @@ function display_agents_summary() {
     if [[ -n "${agent_last_used_timestamp["$agent_info"]}" && "${agent_last_used_timestamp["$agent_info"]}" != "N/A" ]]; then
       # Convert Unix timestamp to human-readable date format using date command
       local last_used_date
-      # last_used_date=$(date -d "@${agent_last_used_timestamp["$agent_info"]}" '+%Y-%m-%d %H:%M:%S')
       last_used_date="${agent_last_used_timestamp["$agent_info"]}"
       echo "Last Used Timestamp: $last_used_date"
     else
@@ -179,7 +181,7 @@ function display_agents_summary() {
 
     echo
   done
+
+  # Display the size of the associative array
+  echo "Total Agents: ${#agent_usage_count[@]}"
 }
-
-
-
