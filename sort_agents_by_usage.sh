@@ -34,6 +34,10 @@ print_title "Jenkins Job Summary"
 # Gather a list of all defined agents
 get_defined_agents
 
+# Print the subtitle and display the found agents
+print_subtitle "Found Agents:"
+display_agents
+
 # Print the title for the first multibranch job
 print_subtitle "Finding jobs"
 

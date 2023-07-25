@@ -11,10 +11,22 @@ declare -A agent_usage_count
 declare -A agent_last_used_timestamp
 
 function get_defined_agents() {
-  local api_endpoint="/computer/api/json?pretty=true"
-  local defined_agents
-  defined_agents=$(make_jenkins_api_request "$api_endpoint" | jq -r '.computer | .[].displayName')
-  info_message "$defined_agents"
+  local agents_response
+  agents_response=$(make_jenkins_api_request "/computer/api/json")
+
+  # Parse the agent names and store them in the associative arrays
+  local agent_names
+  agent_names=$(echo "$agents_response" | jq -r '.computer[] | select(.displayName != null) | .displayName')
+
+  # Initialize the agent usage count and last used timestamp
+  for agent_name in $agent_names; do
+    if [ -z "${agent_usage_count["$agent_name"]}" ]; then
+      agent_usage_count["$agent_name"]=0
+    fi
+    if [ -z "${agent_last_used_timestamp["$agent_name"]}" ]; then
+      agent_last_used_timestamp["$agent_name"]=0
+    fi
+  done
 }
 
 function is_agent_active() {
@@ -162,12 +174,33 @@ function get_agents_for_builds_works() {
   done
 }
 
+# Function to display the found agents
+function display_agents() {
+  local total_agents=0
+
+  for agent_name in "${!agent_usage_count[@]}"; do
+    local usage_count=${agent_usage_count["$agent_name"]}
+    local last_used_timestamp=${agent_last_used_timestamp["$agent_name"]}
+    echo "Agent: $agent_name"
+    debug_message "Agent: $agent_name"
+    #echo "Usage Count: $usage_count"
+    #echo "Last Used Timestamp: $last_used_timestamp"
+    #echo
+    ((total_agents++))
+  done
+
+  echo "Total Agents: $total_agents"
+  echo
+}
+
 function display_agents_summary() {
   # Display the summary of agents found
   print_subtitle "Agent Summary:"
   for agent_info in "${!agent_usage_count[@]}"; do
     echo "Agent: $agent_info"
     echo "Usage Count: ${agent_usage_count["$agent_info"]}"
+    debug_message "Agent: $agent_info"
+    debug_message "Usage Count: ${agent_usage_count["$agent_info"]}"
 
     # Check if the timestamp is valid and non-empty
     if [[ -n "${agent_last_used_timestamp["$agent_info"]}" && "${agent_last_used_timestamp["$agent_info"]}" != "N/A" ]]; then
@@ -175,8 +208,10 @@ function display_agents_summary() {
       local last_used_date
       last_used_date="${agent_last_used_timestamp["$agent_info"]}"
       echo "Last Used Timestamp: $last_used_date"
+      debug_message "Last Used Timestamp: $last_used_date"
     else
       echo "Last Used Timestamp: N/A"
+      debug_message "Last Used Timestamp: N/A"
     fi
 
     echo
@@ -184,4 +219,5 @@ function display_agents_summary() {
 
   # Display the size of the associative array
   echo "Total Agents: ${#agent_usage_count[@]}"
+  debug_message "Total Agents: ${#agent_usage_count[@]}"
 }
