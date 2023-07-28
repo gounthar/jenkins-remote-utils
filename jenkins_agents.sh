@@ -3,6 +3,9 @@
 # Source the utility functions from jenkins_utils.sh
 source ./jenkins_utils.sh
 
+# Source the REST API utility functions from jenkins_api_utils.sh
+source ./jenkins_api_utils.sh
+
 # Source the job-related functions from jenkins_jobs.sh
 source ./jenkins_jobs.sh
 

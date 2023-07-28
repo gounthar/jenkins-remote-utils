@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source the REST API utility functions from jenkins_api_utils.sh
+source ./jenkins_api_utils.sh
+
 function get_all_jobs() {
   local api_endpoint="/api/json"
   local all_jobs

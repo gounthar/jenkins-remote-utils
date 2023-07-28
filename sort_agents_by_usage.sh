@@ -31,6 +31,10 @@ source ./jenkins_jobs.sh
 # Print the main title
 print_title "Jenkins Job Summary"
 
+# Print the subtitle and gather information about the Jenkins server
+print_subtitle "Gathering information about the Jenkins server"
+waiting_for_services_to_be_ready
+
 # Gather a list of all defined agents
 get_defined_agents
 
