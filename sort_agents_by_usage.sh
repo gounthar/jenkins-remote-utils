@@ -106,6 +106,6 @@ display_agents_summary
 sort_agents
 
 info_message "TEMP_DEBUG_FILE: $TEMP_DEBUG_FILE"
-
+mv $TEMP_DEBUG_FILE result.txt
 # Clean up temporary files
 rm "$TEMP_JOB_FILE"
